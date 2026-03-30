@@ -7,6 +7,7 @@ and processes them sequentially in the background.
 import logging
 
 from fastapi import FastAPI, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from database import add_job, get_pending_ids
@@ -19,6 +20,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="SLC Video Pipeline API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Request models ───────────────────────────────────────────────────────
