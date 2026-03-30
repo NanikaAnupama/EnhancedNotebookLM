@@ -3,3 +3,8 @@ Pillow>=10.0
 numpy
 msal
 requests
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+pydantic
