@@ -10,7 +10,7 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from database import add_job, get_pending_ids
+from database import add_job, get_pending_ids, get_queue
 from core import process_single_job
 
 logging.basicConfig(
@@ -75,3 +75,10 @@ def process_batch(payload: BatchPayload, background_tasks: BackgroundTasks):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    """Debug endpoint — list all jobs in the database."""
+    jobs = get_queue()
+    return {"count": len(jobs), "jobs": jobs}
