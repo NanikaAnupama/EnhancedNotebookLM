@@ -72,7 +72,7 @@ def update_status(
 ):
     """Update a job's status and optional result fields."""
     with SessionLocal() as session:
-        job = session.query(Job).get(job_id)
+        job = session.get(Job, job_id)
         if job is None:
             return
         job.status = status
@@ -85,10 +85,22 @@ def update_status(
         session.commit()
 
 
+def claim_job(job_id: int) -> bool:
+    """Atomically claim a pending job for processing. Returns True if claimed."""
+    with SessionLocal() as session:
+        rows = (
+            session.query(Job)
+            .filter(Job.id == job_id, Job.status == "pending")
+            .update({"status": "processing"})
+        )
+        session.commit()
+        return rows > 0
+
+
 def get_job(job_id: int) -> dict | None:
     """Return a single job as a dict, or None."""
     with SessionLocal() as session:
-        job = session.query(Job).get(job_id)
+        job = session.get(Job, job_id)
         if job is None:
             return None
         return _row_to_dict(job)
@@ -139,5 +151,5 @@ def _row_to_dict(job: Job) -> dict:
         "file_path": job.file_path,
         "onedrive_url": job.onedrive_url,
         "error_message": job.error_message,
-        "created_at": job.created_at,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
     }

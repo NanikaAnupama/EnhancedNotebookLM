@@ -7,6 +7,7 @@ process_single_job() orchestrator live here.
 import gc
 import os
 import base64
+import shutil
 import subprocess
 import tempfile
 import time
@@ -19,7 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import msal
 
-from database import get_job, update_status
+from database import get_job, update_status, claim_job
 
 log = logging.getLogger(__name__)
 
@@ -455,8 +456,13 @@ def concat(parts, out, tmp):
 # ── Download helper ──────────────────────────────────────────────────────
 
 def download_video(url: str, temp_dir: Path) -> Path:
-    """Stream-download an .mp4 from *url* into *temp_dir*, return local path."""
+    """Get video into *temp_dir*. Supports file:// (uploaded blobs) and http(s)://."""
     dest = temp_dir / "raw.mp4"
+    if url.startswith("file://"):
+        src = Path(url[7:])
+        shutil.copy2(str(src), str(dest))
+        src.unlink(missing_ok=True)  # clean up upload
+        return dest
     with requests.get(url, stream=True, timeout=300) as r:
         r.raise_for_status()
         with open(dest, "wb") as f:
@@ -579,12 +585,16 @@ def onedrive_upload(file_path: str, filename: str) -> str | None:
 
 def process_single_job(job_id: int):
     """Fetch job from DB, run the full pipeline, upload, update DB."""
+    # Atomically claim — prevents double-processing if two workers race
+    if not claim_job(job_id):
+        log.info("Job %d already claimed or not pending — skipping", job_id)
+        return
+
     job = get_job(job_id)
     if job is None:
         log.error("Job %d not found", job_id)
         return
 
-    update_status(job_id, "processing")
     log.info("Processing job %d: %s / %s", job_id, job["course_name"], job["unit_number"])
 
     try:

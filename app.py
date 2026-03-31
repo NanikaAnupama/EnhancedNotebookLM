@@ -59,7 +59,7 @@ else:
             "failed":     '<span class="badge-failed">❌ Failed</span>',
         }.get(job["status"], job["status"])
 
-        created = job["created_at"].strftime("%Y-%m-%d %H:%M") if job["created_at"] else ""
+        created = job["created_at"][:16].replace("T", " ") if job.get("created_at") else ""
 
         od_link = ""
         if job.get("onedrive_url"):

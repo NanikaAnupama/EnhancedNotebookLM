@@ -5,8 +5,11 @@ and processes them sequentially in the background.
 """
 
 import logging
+import threading
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -28,6 +31,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+UPLOAD_DIR = Path("/tmp/slc_uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # ── Request models ───────────────────────────────────────────────────────
 
@@ -41,22 +47,34 @@ class BatchPayload(BaseModel):
     videos: list[VideoData] = Field(..., max_length=6)
 
 
-# ── Background worker ───────────────────────────────────────────────────
+# ── Background worker (single-threaded, with re-check loop) ─────────────
+
+_processing_lock = threading.Lock()
+
 
 def _process_pending():
-    """Process every pending job sequentially (one at a time)."""
-    pending = get_pending_ids()
-    log.info("Background worker starting: %d pending jobs", len(pending))
-    for job_id in pending:
-        process_single_job(job_id)
-    log.info("Background worker finished")
+    """Process every pending job sequentially. Only one worker runs at a time."""
+    if not _processing_lock.acquire(blocking=False):
+        log.info("Background worker already running — skipping")
+        return
+    try:
+        while True:
+            pending = get_pending_ids()
+            if not pending:
+                break
+            log.info("Background worker found %d pending jobs", len(pending))
+            for job_id in pending:
+                process_single_job(job_id)
+        log.info("Background worker finished — no more pending jobs")
+    finally:
+        _processing_lock.release()
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
 
 @app.post("/api/process-batch")
 def process_batch(payload: BatchPayload, background_tasks: BackgroundTasks):
-    """Accept a batch of videos, insert into DB, kick off background processing."""
+    """Accept a batch of video URLs, insert into DB, kick off background processing."""
     job_ids = []
     for v in payload.videos:
         jid = add_job(
@@ -70,6 +88,32 @@ def process_batch(payload: BatchPayload, background_tasks: BackgroundTasks):
     background_tasks.add_task(_process_pending)
 
     return {"status": "ok", "queued": len(job_ids), "job_ids": job_ids}
+
+
+@app.post("/api/upload-video")
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    course_name: str = Form(...),
+    chapter_name: str = Form(...),
+):
+    """Accept a direct video upload (for blob: URLs the browser can't send as a link).
+    Saves to disk, creates a job with file:// URL, and starts processing."""
+    file_path = UPLOAD_DIR / f"{uuid4().hex}.mp4"
+    with open(file_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
+
+    jid = add_job(
+        course_name=course_name,
+        unit_number=chapter_name,
+        video_url=f"file://{file_path}",
+    )
+    log.info("Upload job %d: %s / %s (%s)", jid, course_name, chapter_name, file_path.name)
+
+    background_tasks.add_task(_process_pending)
+
+    return {"status": "ok", "job_id": jid}
 
 
 @app.get("/health")
