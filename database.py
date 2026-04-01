@@ -141,6 +141,16 @@ def retry_failed():
         session.commit()
 
 
+def retry_all_failed() -> int:
+    """Reset all failed jobs back to pending. Returns count of reset jobs."""
+    with SessionLocal() as session:
+        count = session.query(Job).filter(Job.status == "failed").update(
+            {"status": "pending", "error_message": None}
+        )
+        session.commit()
+        return count
+
+
 def _row_to_dict(job: Job) -> dict:
     return {
         "id": job.id,

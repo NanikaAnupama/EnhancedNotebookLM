@@ -5,6 +5,7 @@ and processes them sequentially in the background.
 """
 
 import logging
+import shutil
 import threading
 from pathlib import Path
 from uuid import uuid4
@@ -118,7 +119,23 @@ async def upload_video(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    ffmpeg_ok = shutil.which("ffmpeg") is not None
+    ffprobe_ok = shutil.which("ffprobe") is not None
+    return {
+        "status": "ok" if (ffmpeg_ok and ffprobe_ok) else "degraded",
+        "ffmpeg": ffmpeg_ok,
+        "ffprobe": ffprobe_ok,
+    }
+
+
+@app.post("/api/retry-failed")
+def retry_failed(background_tasks: BackgroundTasks):
+    """Reset all failed jobs back to pending and reprocess."""
+    from database import retry_all_failed
+    count = retry_all_failed()
+    if count > 0:
+        background_tasks.add_task(_process_pending)
+    return {"status": "ok", "retried": count}
 
 
 @app.get("/api/jobs")
