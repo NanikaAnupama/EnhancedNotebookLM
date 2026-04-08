@@ -117,6 +117,11 @@ async def upload_video(
     return {"status": "ok", "job_id": jid}
 
 
+@app.get("/")
+def root():
+    return {"service": "SLC Video Pipeline API", "docs": "/docs"}
+
+
 @app.get("/health")
 def health():
     ffmpeg_ok = shutil.which("ffmpeg") is not None

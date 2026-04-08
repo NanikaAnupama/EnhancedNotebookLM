@@ -11,7 +11,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "mysql+pymysql://slcapp:changeme@localhost:3306/slcpipeline",
+)
+# Ensure PyMySQL driver is specified
+if DATABASE_URL.startswith("mysql://"):
+    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
 
 engine = create_engine(
     DATABASE_URL,
